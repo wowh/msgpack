@@ -24,6 +24,8 @@
 
 namespace msgpack {
 
+class length_error : public std::bad_cast { };
+
 namespace type {
 
 struct raw_ref {
@@ -58,6 +60,38 @@ struct raw_ref {
 	}
 };
 
+struct raw {
+    raw() : size(0), ptr(NULL) {}
+    raw(const char* p, uint32_t s) : size(s), ptr(p) {}
+
+    uint32_t size;
+    const char* ptr;
+
+    std::string str() const { return std::string(ptr, size); }
+
+    bool operator== (const raw& x) const
+    {
+        return size == x.size && memcmp(ptr, x.ptr, size) == 0;
+    }
+
+    bool operator!= (const raw& x) const
+    {
+        return !(*this != x);
+    }
+
+    bool operator< (const raw& x) const
+    {
+        if(size == x.size) { return memcmp(ptr, x.ptr, size) < 0; }
+        else { return size < x.size; }
+    }
+
+    bool operator> (const raw& x) const
+    {
+        if(size == x.size) { return memcmp(ptr, x.ptr, size) > 0; }
+        else { return size > x.size; }
+    }
+};
+
 }  // namespace type
 
 
@@ -86,6 +120,36 @@ inline void operator<< (object& o, const type::raw_ref& v)
 
 inline void operator<< (object::with_zone& o, const type::raw_ref& v)
 	{ static_cast<object&>(o) << v; }
+
+
+inline type::raw& operator>> (object o, type::raw& v)
+{
+    if(o.type != type::RAW) { throw type_error(); }
+    if (v.size < o.via.raw.size) { throw length_error(); }
+
+    memcpy((void*)v.ptr, o.via.raw.ptr, o.via.raw.size);
+    v.size = o.via.raw.size;
+
+    return v;
+}
+
+template <typename Stream>
+inline packer<Stream>& operator<< (packer<Stream>& o, const type::raw& v)
+{
+    o.pack_raw(v.size);
+    o.pack_raw_body(v.ptr, v.size);
+    return o;
+}
+
+inline void operator<< (object& o, const type::raw& v)
+{
+    o.type = type::RAW;
+    o.via.raw.ptr = v.ptr;
+    o.via.raw.size = v.size;
+}
+
+inline void operator<< (object::with_zone& o, const type::raw& v)
+{ static_cast<object&>(o) << v; }
 
 
 }  // namespace msgpack
